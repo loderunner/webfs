@@ -28,13 +28,15 @@ def get(path):
                 mime = 'application/octet-stream'
             else:
                 mime = mime.replace(' [ [', '')
-            res = flask.make_response(json({'file' : os.path.basename(fullpath),
-                                            'path' : '/%s' % path,
-                                            'size' : stat.st_size,
-                                            'access_time' : int(stat.st_atime),
-                                            'modification_time' : int(stat.st_mtime),
-                                            'change_time' : int(stat.st_ctime),
-                                            'mimetype' : mime}))
+            st = {'file' : os.path.basename(fullpath),
+                  'path' : '/%s' % path,
+                  'access_time' : int(stat.st_atime),
+                  'modification_time' : int(stat.st_mtime),
+                  'change_time' : int(stat.st_ctime),
+                  'mimetype' : mime}
+            if not os.path.isdir(fullpath):
+                st['size'] = int(stat.st_size)
+            res = flask.make_response(json(st))
             res.headers['Content-Type'] = 'application/json; charset=utf-8'
             return res
 
