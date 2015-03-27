@@ -47,7 +47,7 @@ def get(path):
     else:
         return flask.make_response('/%s: No such file or directory.' % path, 404)
 
-@app.route('/<path:path>', methods=['PUT'])
+@app.route('/<path:path>', methods=['PUT', 'POST'])
 def put(path):
     path_components = path.split('/')
     if '.' in path_components or '..' in path_components:
@@ -56,7 +56,7 @@ def put(path):
     fullpath = '%s/%s' % (root_path, path)
     if os.path.exists(fullpath):
         return flask.make_response('/%s: File exists.' % path, 403)
-    elif request.data is None:
+    elif request.data == '' or request.data is None:
         os.mkdir(fullpath)
         return flask.make_response('', 201)
     else:
@@ -75,12 +75,17 @@ def delete(path):
     if '.' in path_components or '..' in path_components:
         return flask.make_response("Path must be absolute.", 400)
 
+    fullpath = '%s/%s' % (root_path, path)
     if os.path.exists(fullpath):
         if os.path.isdir(fullpath):
-            res = flask.make_response(json(os.listdir(fullpath)))
-            res.headers['Content-Type'] = 'application/json; charset=utf-8'
-            return res
+            if os.listdir(fullpath) == []:
+                os.rmdir(fullpath)
+                return flask.make_response('', 204)
+            else:
+                print os.listdir(fullpath)
+                return flask.make_response('/%s: Directory is not empty.' % path, 403)
         else:
+            os.remove(fullpath)
             return flask.make_response('', 204)
     else:
         return flask.make_response('/%s: No such file or directory.' % path, 404)
