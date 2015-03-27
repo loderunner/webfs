@@ -71,9 +71,9 @@ GET /<path>?stat
 
  * `file` - the name of the directory
  * `path` - the absolute path to the directory
- * `access_time` - time of last access (see `[man stat]`(http://linux.die.net/man/2/stat)
- * `change_time` - time of last status change (see `[man stat]`(http://linux.die.net/man/2/stat)
- * `modification_time` - time of last modification (see `[man stat]`(http://linux.die.net/man/2/stat)
+ * `access_time` - time of last access (see [`man stat`](http://linux.die.net/man/2/stat))
+ * `change_time` - time of last status change (see [`man stat`](http://linux.die.net/man/2/stat))
+ * `modification_time` - time of last modification (see [`man stat`](http://linux.die.net/man/2/stat))
  * `mimetype` - always `inode/directory`
 
 **Example:**
@@ -190,9 +190,9 @@ GET /<path>?stat
  * `file` - the name of the file
  * `path` - the absolute path to the file
  * `size` - the size of the file (in bytes)
- * `access_time` - time of last access (see `[man stat]`(http://linux.die.net/man/2/stat)
- * `change_time` - time of last status change (see `[man stat]`(http://linux.die.net/man/2/stat)
- * `modification_time` - time of last modification (see `[man stat]`(http://linux.die.net/man/2/stat)
+ * `access_time` - time of last access (see [`man stat`](http://linux.die.net/man/2/stat))
+ * `change_time` - time of last status change (see [`man stat`](http://linux.die.net/man/2/stat))
+ * `modification_time` - time of last modification (see [`man stat`](http://linux.die.net/man/2/stat))
  * `mimetype` - the MIME type of the file
 
 ```
