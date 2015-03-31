@@ -1,13 +1,16 @@
 #!/usr/bin/env python
 
-from flask import Flask, request
+from flask import Flask, request, current_app, stream_with_context, Response
 from argparse import ArgumentParser
 from json import dumps as json
+from werkzeug.wsgi import wrap_file
 
 import os
 import sys
 import flask
+import filecache
 import magic
+import re
 
 app = Flask(__name__)
 root_path = os.getcwd()
@@ -20,14 +23,16 @@ def get(path):
         return flask.make_response("Path must be absolute.", 400)
 
     fullpath = '%s/%s' % (root_path, path)
+
+    mime = magic.from_file(fullpath, mime=True)
+    if mime is None:
+        mime = 'application/octet-stream'
+    else:
+        mime = mime.replace(' [ [', '')
+
     if os.path.exists(fullpath):
         if (request.args.get('stat') is not None):
             stat = os.stat(fullpath)
-            mime = magic.from_file(fullpath, mime=True)
-            if mime is None:
-                mime = 'application/octet-stream'
-            else:
-                mime = mime.replace(' [ [', '')
             st = {'file' : os.path.basename(fullpath),
                   'path' : '/%s' % path,
                   'access_time' : int(stat.st_atime),
@@ -45,7 +50,39 @@ def get(path):
             res.headers['Content-Type'] = 'application/json; charset=utf-8'
             return res
         else:
-            return flask.send_file(fullpath)
+            stat = os.stat(fullpath)
+            f = filecache.open_file(fullpath)
+            r = request.headers.get('Range')
+            if r is None:
+                f.seek(0)
+                def stream_data():
+                    while True:
+                        d = f.read(8192)
+                        if len(d) > 0:
+                            yield d
+                        else:
+                            break
+                res = Response(stream_with_context(stream_data()), 200, mimetype=mime, direct_passthrough=True)
+                res.headers['Content-Length'] = stat.st_size
+            else:
+                m = re.match('bytes=((\d+-\d+,)*(\d+-\d*))', r)
+                if m is None:
+                    res = flask.make_response('', 401)
+                else:
+                    ranges = [x.split('-') for x in m.group(1).split(',')]
+                    print ranges
+                    f.seek(int(ranges[0][0]))
+                    def stream_data():
+                        while True:
+                            d = f.read(8192)
+                            if len(d) > 0:
+                                yield d
+                            else:
+                                break
+                    res = Response(stream_with_context(stream_data()), 206, mimetype=mime, direct_passthrough=True)
+                    res.headers['Content-Length'] = int(ranges[0][1]) - int(ranges[0][0]) + 1
+            res.headers['Accept-Ranges'] = 'bytes'
+            return res
     else:
         return flask.make_response('/%s: No such file or directory.' % path, 404)
 
@@ -106,3 +143,4 @@ if __name__ == "__main__":
         root_path = args.root_path
 
     app.run(host=args.host, port=args.port, debug=args.debug)
+
