@@ -15,6 +15,9 @@ import re
 app = Flask(__name__)
 root_path = os.getcwd()
 
+def validate_ranges(ranges, content_length):
+    return all([int(r[0]) <= int(r[1]) for r in ranges]) and all([int(x) < content_length for subrange in ranges for x in subrange])
+
 @app.route('/', defaults={'path': ''}, methods=['GET', 'HEAD'])
 @app.route('/<path:path>', methods=['GET', 'HEAD'])
 def get(path):
@@ -53,7 +56,8 @@ def get(path):
             stat = os.stat(fullpath)
             f = filecache.open_file(fullpath)
             r = request.headers.get('Range')
-            if r is None:
+            m = re.match('bytes=((\d+-\d+,)*(\d+-\d*))', r) if r is not None else None
+            if r is None or m is None:
                 f.seek(0)
                 def stream_data():
                     while True:
@@ -65,22 +69,35 @@ def get(path):
                 res = Response(stream_with_context(stream_data()), 200, mimetype=mime, direct_passthrough=True)
                 res.headers['Content-Length'] = stat.st_size
             else:
-                m = re.match('bytes=((\d+-\d+,)*(\d+-\d*))', r)
-                if m is None:
-                    res = flask.make_response('', 401)
-                else:
-                    ranges = [x.split('-') for x in m.group(1).split(',')]
-                    print ranges
-                    f.seek(int(ranges[0][0]))
+                ranges = [x.split('-') for x in m.group(1).split(',')]
+                if validate_ranges(ranges, stat.st_size):
+                    content_length = 0
+                    for rng in ranges:
+                        if rng[1] == '':
+                            content_length = content_length + stat.st_size - int(rng[0]) + 1
+                        else:
+                            content_length = content_length + int(rng[1]) - int(rng[0]) + 1
                     def stream_data():
-                        while True:
-                            d = f.read(8192)
-                            if len(d) > 0:
-                                yield d
+                        for r in ranges:
+                            f.seek(int(r[0]))
+                            if r[1] == '':
+                                while True:
+                                    d = f.read(8192)
+                                    if len(d) > 0:
+                                        yield d
+                                    else:
+                                        break
                             else:
-                                break
+                                print [min(8192, int(r[1]) - i) for i in range(int(r[0]), int(r[1]), 8192)]
+                                for s in [min(8192, int(r[1]) - i) for i in range(int(r[0]), int(r[1]), 8192)]:
+                                    d = f.read(s)
+                                    yield d
+
+
                     res = Response(stream_with_context(stream_data()), 206, mimetype=mime, direct_passthrough=True)
-                    res.headers['Content-Length'] = int(ranges[0][1]) - int(ranges[0][0]) + 1
+                    res.headers['Content-Length'] = content_length
+                else:
+                    res = flask.make_response('', 416)
             res.headers['Accept-Ranges'] = 'bytes'
             return res
     else:
