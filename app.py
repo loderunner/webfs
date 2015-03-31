@@ -88,17 +88,17 @@ def get(path):
                                     else:
                                         break
                             else:
-                                print [min(8192, int(r[1]) - i) for i in range(int(r[0]), int(r[1]), 8192)]
-                                for s in [min(8192, int(r[1]) - i) for i in range(int(r[0]), int(r[1]), 8192)]:
+                                for s in [min(8192, int(r[1]) - i + 1) for i in range(int(r[0]), int(r[1]), 8192)]:
                                     d = f.read(s)
                                     yield d
 
 
                     res = Response(stream_with_context(stream_data()), 206, mimetype=mime, direct_passthrough=True)
                     res.headers['Content-Length'] = content_length
+                    res.headers['Content-Range'] = 'bytes %s-%s/%d' % (ranges[0][0], ranges[0][1], stat.st_size)
                 else:
                     res = flask.make_response('', 416)
-            res.headers['Accept-Ranges'] = 'bytes'
+            # res.headers['Accept-Ranges'] = 'bytes'
             return res
     else:
         return flask.make_response('/%s: No such file or directory.' % path, 404)
