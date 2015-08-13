@@ -22,17 +22,23 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from flask import Flask, request
+from flask import Flask, request, current_app, stream_with_context, Response
 from argparse import ArgumentParser
 from json import dumps as json
+from werkzeug.wsgi import wrap_file
 
 import os
 import sys
 import flask
+import filecache
 import magic
+import re
 
 app = Flask(__name__)
 root_path = os.getcwd()
+
+def validate_ranges(ranges, content_length):
+    return all([int(r[0]) <= int(r[1]) for r in ranges]) and all([int(x) < content_length for subrange in ranges for x in subrange])
 
 @app.route('/', defaults={'path': ''}, methods=['GET', 'HEAD'])
 @app.route('/<path:path>', methods=['GET', 'HEAD'])
@@ -42,14 +48,16 @@ def get(path):
         return flask.make_response("Path must be absolute.", 400)
 
     fullpath = '%s/%s' % (root_path, path)
+
+    mime = magic.from_file(fullpath, mime=True)
+    if mime is None:
+        mime = 'application/octet-stream'
+    else:
+        mime = mime.replace(' [ [', '')
+
     if os.path.exists(fullpath):
         if (request.args.get('stat') is not None):
             stat = os.stat(fullpath)
-            mime = magic.from_file(fullpath, mime=True)
-            if mime is None:
-                mime = 'application/octet-stream'
-            else:
-                mime = mime.replace(' [ [', '')
             st = {'file' : os.path.basename(fullpath),
                   'path' : '/%s' % path,
                   'access_time' : int(stat.st_atime),
@@ -67,7 +75,53 @@ def get(path):
             res.headers['Content-Type'] = 'application/json; charset=utf-8'
             return res
         else:
-            return flask.send_file(fullpath)
+            stat = os.stat(fullpath)
+            f = filecache.open_file(fullpath)
+            r = request.headers.get('Range')
+            m = re.match('bytes=((\d+-\d+,)*(\d+-\d*))', r) if r is not None else None
+            if r is None or m is None:
+                f.seek(0)
+                def stream_data():
+                    while True:
+                        d = f.read(8192)
+                        if len(d) > 0:
+                            yield d
+                        else:
+                            break
+                res = Response(stream_with_context(stream_data()), 200, mimetype=mime, direct_passthrough=True)
+                res.headers['Content-Length'] = stat.st_size
+            else:
+                ranges = [x.split('-') for x in m.group(1).split(',')]
+                if validate_ranges(ranges, stat.st_size):
+                    content_length = 0
+                    for rng in ranges:
+                        if rng[1] == '':
+                            content_length = content_length + stat.st_size - int(rng[0]) + 1
+                        else:
+                            content_length = content_length + int(rng[1]) - int(rng[0]) + 1
+                    def stream_data():
+                        for r in ranges:
+                            f.seek(int(r[0]))
+                            if r[1] == '':
+                                while True:
+                                    d = f.read(8192)
+                                    if len(d) > 0:
+                                        yield d
+                                    else:
+                                        break
+                            else:
+                                for s in [min(8192, int(r[1]) - i + 1) for i in range(int(r[0]), int(r[1]), 8192)]:
+                                    d = f.read(s)
+                                    yield d
+
+
+                    res = Response(stream_with_context(stream_data()), 206, mimetype=mime, direct_passthrough=True)
+                    res.headers['Content-Length'] = content_length
+                    res.headers['Content-Range'] = 'bytes %s-%s/%d' % (ranges[0][0], ranges[0][1], stat.st_size)
+                else:
+                    res = flask.make_response('', 416)
+            # res.headers['Accept-Ranges'] = 'bytes'
+            return res
     else:
         return flask.make_response('/%s: No such file or directory.' % path, 404)
 
